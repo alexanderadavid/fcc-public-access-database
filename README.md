@@ -40,6 +40,12 @@ database: WirelessPA
 port: 3306
 ```
 
+## Compatibility
+
+This should work on all GNU/Unix systems.
+
+If you run Windows you can probably figure out how to run the commands in the `Makefile`. You will need bash.
+
 ## Resources
 
 Documentation on the FCC files can be found in the following links
@@ -47,9 +53,3 @@ Documentation on the FCC files can be found in the following links
 https://www.fcc.gov/sites/default/files/pubacc_uls_code_def_02162017.txt
 
 https://www.fcc.gov/sites/default/files/pubacc_tbl_abbr_names_08212007.pdf
-
-## Compatibility
-
-This should work on all GNU/Unix systems.
-
-If you run Windows you can probably figure out how to run the commands in the `Makefile`. You will need bash.
