@@ -18,8 +18,13 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const rowBatchSize = 50
-const numWorkers = 10
+var rowBatchSize = 50
+var numWorkers = 10
+
+const wirelessFtpDir = "wirelessftp.fcc.gov/pub/uls/complete/%s/%s.dat"
+
+// stub db.Exec for unit testing which queries are called
+type execType = func(query string, args ...interface{}) (sql.Result, error)
 
 func main() {
 	start := time.Now()
@@ -28,7 +33,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	if err := initTables(db); err != nil {
+	if err := initTables(db.Exec); err != nil {
 		panic(err)
 	}
 	// Open a connection with the newly created Database
@@ -37,13 +42,13 @@ func main() {
 		panic(err)
 	}
 	defer db.Close()
-	if err := seedData(db); err != nil {
+	if err := seedData(db.Exec); err != nil {
 		panic(err)
 	}
 	fmt.Println("Finished... took " + time.Since(start).String())
 }
 
-func initTables(db *sql.DB) error {
+func initTables(exec execType) error {
 	fmt.Println("Initializing Database Tables")
 	path, err := filepath.Abs("init.sql")
 	if err != nil {
@@ -56,7 +61,7 @@ func initTables(db *sql.DB) error {
 	}
 	queries := strings.Split(string(c), ";")
 	for _, query := range queries[:len(queries)-1] {
-		_, err = db.Exec(query + ";")
+		_, err = exec(strings.TrimSpace(query) + ";")
 		if err != nil {
 			return err
 		}
@@ -64,7 +69,7 @@ func initTables(db *sql.DB) error {
 	return nil
 }
 
-func seedData(db *sql.DB) error {
+func seedData(exec execType) error {
 	path, err := filepath.Abs("config.json")
 	if err != nil {
 		return err
@@ -77,7 +82,9 @@ func seedData(db *sql.DB) error {
 	}
 	for dir, dats := range files {
 		for _, dat := range dats {
-			if err := uploadDatFile(dir, dat, db); err != nil {
+			if err := uploadDatFile(
+				fmt.Sprintf(wirelessFtpDir, dir, dat), dat, exec,
+			); err != nil {
 				return err
 			}
 		}
@@ -85,8 +92,8 @@ func seedData(db *sql.DB) error {
 	return nil
 }
 
-func uploadDatFile(dir, dat string, db *sql.DB) error {
-	path, err := filepath.Abs(fmt.Sprintf("wirelessftp.fcc.gov/pub/uls/complete/%s/%s.dat", dir, dat))
+func uploadDatFile(filePath, table string, exec execType) error {
+	path, err := filepath.Abs(filePath)
 	if err != nil {
 		return err
 	}
@@ -109,7 +116,7 @@ func uploadDatFile(dir, dat string, db *sql.DB) error {
 	// fanning out consumers to run insert queries
 	for i := 0; i < numWorkers; i++ {
 		g.Go(func() error {
-			if err := queryBuilder(dat, rows, &finished, db); err != nil {
+			if err := queryBuilder(table, rows, &finished, exec); err != nil {
 				return err
 			}
 			return nil
@@ -128,14 +135,14 @@ func uploadDatFile(dir, dat string, db *sql.DB) error {
 	return g.Wait()
 }
 
-func queryBuilder(dat string, rows <-chan string, finished *int32, db *sql.DB) error {
+func queryBuilder(table string, rows <-chan string, finished *int32, exec execType) error {
 	for atomic.LoadInt32(finished) == 0 {
-		q := buildInsertQuery(dat, rows)
+		q := buildInsertQuery(table, rows)
 		if q == "" {
 			atomic.StoreInt32(finished, 1)
 			return nil
 		}
-		if _, err := db.Exec(q); err != nil {
+		if _, err := exec(q); err != nil {
 			fmt.Println("Error executing batch insert query:", err)
 			return err
 		}
@@ -143,14 +150,14 @@ func queryBuilder(dat string, rows <-chan string, finished *int32, db *sql.DB) e
 	return nil
 }
 
-func buildInsertQuery(dat string, rows <-chan string) string {
-	insertLine := fmt.Sprintf("insert ignore into %s values ", dat)
+func buildInsertQuery(table string, rows <-chan string) string {
+	insertLine := fmt.Sprintf("insert ignore into %s values ", table)
 	values := ""
 	rowCount := 0
 	for row := range rows {
 		row = strings.ReplaceAll(row, "'", "\\'")
 		values += fmt.Sprintf("('%s'), ", strings.ReplaceAll(row, "|", "', '"))
-		if rowCount > rowBatchSize {
+		if rowCount >= rowBatchSize - 1 {
 			values = values[:len(values)-2] // remove trailing comma and space
 			return insertLine + values
 		}
