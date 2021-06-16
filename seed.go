@@ -18,10 +18,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-var rowBatchSize = 50
-var numWorkers = 10
+var rowBatchSize = 30
+var numWorkers = 30
 
-const wirelessFtpDir = "wirelessftp.fcc.gov/pub/uls/complete/%s/%s.dat"
+const wirelessFtpDir  = "wirelessftp.fcc.gov/pub/uls/complete/%s/%s.dat"
 
 // stub db.Exec for unit testing which queries are called
 type execType = func(query string, args ...interface{}) (sql.Result, error)
@@ -157,7 +157,7 @@ func buildInsertQuery(table string, rows <-chan string) string {
 	for row := range rows {
 		row = strings.ReplaceAll(row, "'", "\\'")
 		values += fmt.Sprintf("('%s'), ", strings.ReplaceAll(row, "|", "', '"))
-		if rowCount >= rowBatchSize - 1 {
+		if rowCount >= rowBatchSize-1 {
 			values = values[:len(values)-2] // remove trailing comma and space
 			return insertLine + values
 		}
