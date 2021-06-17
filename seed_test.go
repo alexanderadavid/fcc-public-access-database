@@ -52,7 +52,6 @@ func Test_buildInsertQuery(t *testing.T) {
 			}
 		})
 	}
-	return
 }
 
 func Test_initTables(t *testing.T) {
